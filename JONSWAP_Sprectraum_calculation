@@ -1,0 +1,159 @@
+import numpy as np
+import matplotlib.pyplot as plt
+
+# Given parameters
+U10 = 10.0  # m/s
+F = 200000  # m (200 km)
+g = 9.81
+gamma = 3.3
+
+# Site 1: h = 30m (deep/intermediate water)
+h1 = 30.0
+# Site 2: h = 4m (shallow water)
+h2 = 4.0
+
+# Calculate alpha and f_p for JONSWAP
+gF_U2 = (g * F) / (U10**2)
+f_p = (3.5 * g / U10) * (gF_U2)**(-0.33)
+alpha = 0.076 * (gF_U2)**(-0.22)
+
+print(f"Parameters:")
+print(f"gF/U10² = {gF_U2:.0f}")
+print(f"f_p = {f_p:.4f} Hz")
+print(f"T_p = {1/f_p:.2f} s") 
+print(f"alpha = {alpha:.6f}")
+
+# JONSWAP spectrum function
+def jonswap_spectrum(f, alpha, f_p, gamma):
+    """Calculate JONSWAP spectral density S(f) in m²/Hz"""
+    sigma = np.where(f <= f_p, 0.07, 0.09)
+    pm_part = (alpha * g**2) / ((2*np.pi)**4 * f**5) * np.exp(-1.25 * (f_p/f)**4)
+    exponent = -((f - f_p)**2) / (2 * sigma**2 * f_p**2)
+    enhancement = gamma**np.exp(exponent)
+    return pm_part * enhancement
+
+# TMA spectrum function (JONSWAP modified for finite depth)
+def tma_spectrum(f, alpha, f_p, gamma, h):
+    """Calculate TMA spectral density S(f) in m²/Hz"""
+    S_j = jonswap_spectrum(f, alpha, f_p, gamma)
+    
+    # Depth scaling function Φ(f,h)
+    omega_h = 2 * np.pi * f * np.sqrt(h / g)
+    
+    phi = np.zeros_like(omega_h)
+    phi[omega_h <= 1] = omega_h[omega_h <= 1]**2 / 2
+    mask = omega_h > 1
+    phi[mask] = 1 - 0.5 * (2 - omega_h[mask])**2
+    
+    return S_j * phi
+
+# Create frequency array
+f = np.linspace(0.01, 0.5, 1000)
+
+# Calculate spectra
+S_site1 = jonswap_spectrum(f, alpha, f_p, gamma)  # Site 1: JONSWAP
+S_site2 = tma_spectrum(f, alpha, f_p, gamma, h2)  # Site 2: TMA
+
+# Numerical integration for m0
+def integrate_spectrum(S, f):
+    return np.trapz(S, f)
+
+m0_site1 = integrate_spectrum(S_site1, f)
+m0_site2 = integrate_spectrum(S_site2, f)
+
+# Calculate wave parameters
+Hs_site1 = 4 * np.sqrt(m0_site1)
+Hs_site2 = 4 * np.sqrt(m0_site2)
+
+# Apply depth limitation for Site 2
+Hs_site2_limited = min(Hs_site2, 0.78 * h2)
+Hmax_site1 = 1.86 * Hs_site1
+Hmax_site2 = 1.86 * Hs_site2_limited
+
+print(f"\nSite 1 (h = {h1}m) - JONSWAP Spectrum:")
+print(f"m₀ = {m0_site1:.4f} m²")
+print(f"Hs = {Hs_site1:.2f} m")
+print(f"Hmax = {Hmax_site1:.2f} m")
+
+print(f"\nSite 2 (h = {h2}m) - TMA Spectrum:")
+print(f"m₀ = {m0_site2:.4f} m²")
+print(f"Hs (theoretical) = {Hs_site2:.2f} m")
+print(f"Hs (depth-limited) = {Hs_site2_limited:.2f} m")
+print(f"Hmax = {Hmax_site2:.2f} m")
+
+# Plot both spectra
+plt.figure(figsize=(12, 8))
+
+# Main spectrum plot
+plt.subplot(2, 1, 1)
+plt.plot(f, S_site1, 'b-', linewidth=2, label=f'Site 1: JONSWAP (h = {h1}m)')
+plt.plot(f, S_site2, 'r-', linewidth=2, label=f'Site 2: TMA (h = {h2}m)')
+
+# Fill areas under curves
+plt.fill_between(f, 0, S_site1, alpha=0.2, color='blue')
+plt.fill_between(f, 0, S_site2, alpha=0.2, color='red')
+
+plt.axvline(f_p, color='green', linestyle='--', linewidth=1, alpha=0.7, label=f'Peak frequency f_p = {f_p:.3f} Hz')
+
+plt.xlabel('Frequency (Hz)')
+plt.ylabel('Spectral Density S(f) (m²/Hz)')
+plt.title('Comparison of Wave Spectra: Site 1 (JONSWAP) vs Site 2 (TMA)\n' +
+          f'U₁₀ = {U10} m/s, F = {F/1000} km, γ = {gamma}')
+plt.legend()
+plt.grid(True, alpha=0.3)
+plt.xlim(0, 0.2)
+plt.ylim(bottom=0)
+
+# Zoomed-in plot around peak
+plt.subplot(2, 1, 2)
+plt.plot(f, S_site1, 'b-', linewidth=2, label='Site 1: JONSWAP')
+plt.plot(f, S_site2, 'r-', linewidth=2, label='Site 2: TMA')
+plt.axvline(f_p, color='green', linestyle='--', linewidth=1, alpha=0.7)
+
+plt.xlabel('Frequency (Hz)')
+plt.ylabel('Spectral Density S(f) (m²/Hz)')
+plt.title('Zoom around Peak Frequency Region')
+plt.legend()
+plt.grid(True, alpha=0.3)
+plt.xlim(f_p*0.5, f_p*2.0)
+
+# Add text box with results
+textstr = '\n'.join((
+    f'Site 1 (h={h1}m):',
+    f'  Hs = {Hs_site1:.2f} m',
+    f'  Hmax = {Hmax_site1:.2f} m',
+    f'  Tp = {1/f_p:.1f} s',
+    f'  m₀ = {m0_site1:.3f} m²',
+    '',
+    f'Site 2 (h={h2}m):',
+    f'  Hs = {Hs_site2_limited:.2f} m',
+    f'  Hmax = {Hmax_site2:.2f} m',
+    f'  Tp = {1/f_p:.1f} s',
+    f'  m₀ = {m0_site2:.3f} m²'))
+
+props = dict(boxstyle='round', facecolor='wheat', alpha=0.8)
+plt.subplot(2, 1, 1)
+plt.text(0.02, 0.98, textstr, transform=plt.gca().transAxes, fontsize=10,
+         verticalalignment='top', bbox=props)
+
+plt.tight_layout()
+plt.show()
+
+# Print final answers for homework
+print(f"\n" + "="*50)
+print("FINAL ANSWERS FOR Report:")
+print("="*50)
+print(f"Site 1 (h = 30m, offshore):")
+print(f"  Hs = {Hs_site1:.2f} m")
+print(f"  Hmax = {Hmax_site1:.2f} m") 
+print(f"  Tp = {1/f_p:.1f} s")
+
+print(f"\nSite 2 (h = 4m, landward):")
+print(f"  Hs = {Hs_site2_limited:.2f} m")
+print(f"  Hmax = {Hmax_site2:.2f} m")
+print(f"  Tp = {1/f_p:.1f} s (similar peak period)")
+
+print(f"\nKey observations:")
+print(f"- TMA spectrum reduces high-frequency energy due to depth effects")
+print(f"- Site 2 Hs is depth-limited to approximately 0.78h = {0.78*h2:.2f} m")
+print(f"- Peak frequency remains similar but spectral shape changes significantly")
