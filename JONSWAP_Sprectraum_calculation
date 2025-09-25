@@ -67,7 +67,7 @@ Hs_site2 = 4 * np.sqrt(m0_site2)
 
 # Apply depth limitation for Site 2
 Hs_site2_limited = min(Hs_site2, 0.78 * h2)
-Hmax_site1 = 1.86 * Hs_site1
+Hmax_site1 = 2 * Hs_site1
 Hmax_site2 = 1.80 * Hs_site2_limited
 
 print(f"\nSite 1 (h = {h1}m) - JONSWAP Spectrum:")
